@@ -1,14 +1,14 @@
 # FSAD-Project-25-Backend
 # ⚙️ Online Assignment Submission System – Backend
 
-## 📌 Project Overview
+##  Project Overview
 
 This is the backend of the **Online Assignment Submission and Grading System** built using Spring Boot.
 It handles authentication, database operations, and API services.
 
 ---
 
-## 🚀 Features
+##  Features
 
 * 🔐 User Authentication (Login/Register)
 * 📚 Assignment Management (CRUD)
@@ -19,7 +19,7 @@ It handles authentication, database operations, and API services.
 
 ---
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 * Java
 * Spring Boot
