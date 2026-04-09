@@ -2,6 +2,12 @@ package com.vinay.gradingsystem.model;
 
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "assignment")
@@ -44,6 +50,15 @@ public class Assignment {
     @JsonProperty("removedAt")
     private String removedAt;
 
+    @JsonIgnore
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "course_id")
+    private Course course;
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "assignment")
+    private List<Submission> submissions = new ArrayList<>();
+
     // getters & setters
 
     public Long getId() { return id; }
@@ -77,4 +92,24 @@ public class Assignment {
 
     public String getRemovedAt() { return removedAt; }
     public void setRemovedAt(String removedAt) { this.removedAt = removedAt; }
+
+    public Course getCourse() { return course; }
+    public void setCourse(Course course) { this.course = course; }
+
+    public List<Submission> getSubmissions() { return submissions; }
+    public void setSubmissions(List<Submission> submissions) { this.submissions = submissions; }
+
+    @JsonIgnore
+    @Transient
+    public LocalDateTime getDeadline() {
+        if (dueDate == null || dueDate.isBlank()) {
+            return null;
+        }
+
+        try {
+            return LocalDateTime.parse(dueDate.trim());
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
+    }
 }

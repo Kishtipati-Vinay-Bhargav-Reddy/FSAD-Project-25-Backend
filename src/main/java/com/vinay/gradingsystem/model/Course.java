@@ -1,6 +1,10 @@
 package com.vinay.gradingsystem.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
+
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "course_catalog")
@@ -22,11 +26,18 @@ public class Course {
     @Column(nullable = false)
     private String term;
 
+    @Column(name = "teacher_id")
+    private Long teacherId;
+
     @Column(nullable = false)
     private boolean active = true;
 
     @Column(name = "removed_at")
     private String removedAt;
+
+    @JsonIgnore
+    @OneToMany(mappedBy = "course")
+    private List<Assignment> assignments = new ArrayList<>();
 
     public Long getId() { return id; }
 
@@ -42,9 +53,15 @@ public class Course {
     public String getTerm() { return term; }
     public void setTerm(String term) { this.term = term; }
 
+    public Long getTeacherId() { return teacherId; }
+    public void setTeacherId(Long teacherId) { this.teacherId = teacherId; }
+
     public boolean isActive() { return active; }
     public void setActive(boolean active) { this.active = active; }
 
     public String getRemovedAt() { return removedAt; }
     public void setRemovedAt(String removedAt) { this.removedAt = removedAt; }
+
+    public List<Assignment> getAssignments() { return assignments; }
+    public void setAssignments(List<Assignment> assignments) { this.assignments = assignments; }
 }

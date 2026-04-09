@@ -4,8 +4,11 @@ import com.vinay.gradingsystem.model.Assignment;
 import com.vinay.gradingsystem.model.Course;
 import com.vinay.gradingsystem.repository.AssignmentRepository;
 import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.server.ResponseStatusException;
@@ -14,6 +17,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
@@ -23,8 +27,10 @@ import java.util.Set;
 @Service
 public class AssignmentService {
 
+    private static final Logger log = LoggerFactory.getLogger(AssignmentService.class);
     private static final String UNASSIGNED_COURSE_CODE = "UNASSIGNED";
     private static final String UNASSIGNED_COURSE_NAME = "Course Not Assigned";
+    private static final long MAX_FILE_SIZE_BYTES = 10L * 1024 * 1024;
     private static final Path QUESTION_FILE_UPLOAD_PATH = Paths.get("assignment-files").toAbsolutePath().normalize();
     private static final Set<String> ALLOWED_QUESTION_FILE_EXTENSIONS = Set.of("pdf", "doc", "docx");
 
@@ -34,14 +40,14 @@ public class AssignmentService {
     @Autowired
     private CourseService courseService;
 
-    @PostConstruct
-    public void reactivateExistingAssignmentsAfterSoftDeleteMigration() {
-        List<Assignment> legacyAssignments = repo.findByActiveFalseAndRemovedAtIsNull();
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
-        legacyAssignments.forEach(assignment -> {
-            assignment.setActive(true);
-            repo.save(assignment);
-        });
+    @PostConstruct
+    public void migrateExistingAssignments() {
+        dropLegacyCourseForeignKeys();
+        reactivateExistingAssignmentsAfterSoftDeleteMigration();
+        connectExistingAssignmentsToCourses();
     }
 
     public Assignment createAssignment(Assignment assignment) {
@@ -56,24 +62,26 @@ public class AssignmentService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignment deadline is required.");
         }
 
+        validateDeadlineFormat(normalizedDueDate);
+
         assignment.setDueDate(normalizedDueDate);
+        assignment.setTitle(normalizeRequiredText(assignment.getTitle(), "Assignment title is required."));
+        assignment.setDescription(normalizeRequiredText(assignment.getDescription(), "Assignment description is required."));
+        assignment.setTeacherName(normalizeOptionalText(assignment.getTeacherName()));
         assignment.setActive(true);
         assignment.setRemovedAt(null);
 
         if (normalizedCourseCode == null) {
+            assignment.setCourse(null);
             assignment.setCourseCode(UNASSIGNED_COURSE_CODE);
             assignment.setCourseName(UNASSIGNED_COURSE_NAME);
         } else {
-            Optional<Course> selectedCourse = courseService.findActiveByCode(normalizedCourseCode);
+            Course selectedCourse = courseService.findActiveByCode(normalizedCourseCode)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected course does not exist or was removed."));
 
-            if (selectedCourse.isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected course does not exist or was removed.");
-            }
-
+            assignment.setCourse(selectedCourse);
             assignment.setCourseCode(normalizedCourseCode);
-            assignment.setCourseName(selectedCourse
-                    .map(Course::getName)
-                    .orElseGet(() -> hasText(assignment.getCourseName()) ? assignment.getCourseName().trim() : UNASSIGNED_COURSE_NAME));
+            assignment.setCourseName(selectedCourse.getName());
         }
 
         if (questionFile != null && !questionFile.isEmpty()) {
@@ -90,6 +98,7 @@ public class AssignmentService {
         String normalizedCourseCode = normalizeCourseCode(courseCode);
 
         if (normalizedCourseCode == null) {
+            log.info("Fetching assignments without filters");
             return repo.findAllByActiveTrueOrderByDueDateAsc();
         }
 
@@ -147,20 +156,72 @@ public class AssignmentService {
         return "assignment-question";
     }
 
-    private String normalizeCourseCode(String courseCode) {
-        if (!hasText(courseCode)) {
-            return null;
-        }
+    private void reactivateExistingAssignmentsAfterSoftDeleteMigration() {
+        List<Assignment> legacyAssignments = repo.findByActiveFalseAndRemovedAtIsNull();
 
-        return courseCode.trim().toUpperCase(Locale.ROOT);
+        legacyAssignments.forEach(assignment -> {
+            assignment.setActive(true);
+            repo.save(assignment);
+        });
     }
 
-    private String normalizeDueDate(String dueDate) {
-        if (!hasText(dueDate)) {
-            return null;
+    private void dropLegacyCourseForeignKeys() {
+        List<String> legacyConstraintNames = jdbcTemplate.queryForList("""
+                        select constraint_name
+                        from information_schema.key_column_usage
+                        where table_schema = database()
+                          and table_name = 'assignment'
+                          and column_name = 'course_id'
+                          and referenced_table_name = 'course'
+                        """,
+                String.class
+        );
+
+        legacyConstraintNames.forEach(this::dropForeignKeyIfSafe);
+    }
+
+    private void connectExistingAssignmentsToCourses() {
+        repo.findAll().forEach(assignment -> {
+            if (assignment.getCourse() != null) {
+                return;
+            }
+
+            String normalizedCourseCode = normalizeCourseCode(assignment.getCourseCode());
+
+            if (normalizedCourseCode == null || UNASSIGNED_COURSE_CODE.equalsIgnoreCase(normalizedCourseCode)) {
+                assignment.setCourse(null);
+                assignment.setCourseCode(UNASSIGNED_COURSE_CODE);
+                assignment.setCourseName(assignment.getCourseName() == null ? UNASSIGNED_COURSE_NAME : assignment.getCourseName());
+                repo.save(assignment);
+                return;
+            }
+
+            Optional<Course> course = courseService.findAnyByCode(normalizedCourseCode);
+            course.ifPresent(existingCourse -> {
+                assignment.setCourse(existingCourse);
+                assignment.setCourseCode(existingCourse.getCode());
+                assignment.setCourseName(existingCourse.getName());
+                repo.save(assignment);
+            });
+        });
+    }
+
+    private void dropForeignKeyIfSafe(String constraintName) {
+        if (!hasText(constraintName) || !constraintName.matches("[A-Za-z0-9_]+")) {
+            log.warn("Skipping unsafe foreign key name while repairing assignment schema: {}", constraintName);
+            return;
         }
 
-        return dueDate.trim();
+        jdbcTemplate.execute("alter table assignment drop foreign key `" + constraintName + "`");
+        log.info("Dropped legacy assignment foreign key {}", constraintName);
+    }
+
+    private void validateDeadlineFormat(String dueDate) {
+        try {
+            LocalDateTime.parse(dueDate);
+        } catch (Exception exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Assignment deadline is invalid.");
+        }
     }
 
     private void applyQuestionFile(Assignment assignment, MultipartFile questionFile) {
@@ -168,6 +229,10 @@ public class AssignmentService {
 
         if (!hasText(originalFileName)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question file name is invalid.");
+        }
+
+        if (questionFile.getSize() > MAX_FILE_SIZE_BYTES) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Question file must be 10MB or smaller.");
         }
 
         String extension = getFileExtension(originalFileName);
@@ -186,13 +251,45 @@ public class AssignmentService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid question file path.");
             }
 
-            Files.copy(questionFile.getInputStream(), targetFile);
+            Files.copy(questionFile.getInputStream(), targetFile, StandardCopyOption.REPLACE_EXISTING);
 
             assignment.setQuestionFileName(storedFileName);
             assignment.setQuestionFileOriginalName(originalFileName);
         } catch (IOException exception) {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Unable to save question file.");
         }
+    }
+
+    private String normalizeCourseCode(String courseCode) {
+        if (!hasText(courseCode)) {
+            return null;
+        }
+
+        return courseCode.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private String normalizeDueDate(String dueDate) {
+        if (!hasText(dueDate)) {
+            return null;
+        }
+
+        return dueDate.trim();
+    }
+
+    private String normalizeRequiredText(String value, String message) {
+        if (!hasText(value)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message);
+        }
+
+        return value.trim();
+    }
+
+    private String normalizeOptionalText(String value) {
+        if (!hasText(value)) {
+            return null;
+        }
+
+        return value.trim();
     }
 
     private String sanitizeFileName(String fileName) {

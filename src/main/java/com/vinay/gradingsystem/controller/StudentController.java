@@ -1,51 +1,51 @@
 package com.vinay.gradingsystem.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.*;
-
 import com.vinay.gradingsystem.model.Student;
 import com.vinay.gradingsystem.service.StudentService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/auth")   // 🔥 MUST match frontend
+@RequestMapping("/api/auth")
 @CrossOrigin(origins = "*")
+@Tag(name = "Authentication", description = "Registration, login, and profile APIs")
 public class StudentController {
 
     @Autowired
     private StudentService service;
 
-    // ✅ REGISTER
     @PostMapping("/register")
+    @Operation(summary = "Register a new user")
     public Map<String, Object> register(@RequestBody Student student) {
-
         Student saved = service.register(student);
 
-        Map<String, Object> res = new HashMap<>();
-        res.put("token", "dummy-token");   // frontend needs this
-        res.put("user", saved);
+        Map<String, Object> response = new HashMap<>();
+        response.put("token", "dummy-token");
+        response.put("user", saved);
 
-        return res;
+        return response;
     }
 
-    // ✅ LOGIN
     @PostMapping("/login")
+    @Operation(summary = "Login an existing user")
     public Map<String, Object> login(@RequestBody Student student) {
-
         Student user = service.login(student.getEmail(), student.getPassword());
 
-        Map<String, Object> res = new HashMap<>();
-        res.put("token", "dummy-token");
-        res.put("user", user);
+        Map<String, Object> response = new HashMap<>();
+        response.put("token", "dummy-token");
+        response.put("user", user);
 
-        return res;
+        return response;
     }
 
-    // ✅ PROFILE (VERY IMPORTANT FIX)
     @GetMapping("/profile")
-    public Student profile(@RequestParam String email) {
+    @Operation(summary = "Get a user profile by email")
+    public Student profile(@RequestParam(required = false) String email) {
         return service.getProfile(email);
     }
 }
