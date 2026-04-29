@@ -1,0 +1,57 @@
+services:
+  - type: pserv
+    name: grading-system-mysql
+    runtime: docker
+    repo: https://github.com/render-examples/mysql.git
+    plan: starter
+    autoDeployTrigger: off
+    disk:
+      name: mysql-data
+      mountPath: /var/lib/mysql
+      sizeGB: 10
+    envVars:
+      - key: MYSQL_DATABASE
+        value: grading_system
+      - key: MYSQL_USER
+        value: grading_user
+      - key: MYSQL_PASSWORD
+        generateValue: true
+      - key: MYSQL_ROOT_PASSWORD
+        generateValue: true
+
+  - type: web
+    name: grading-system-backend
+    runtime: docker
+    plan: starter
+    region: singapore
+    healthCheckPath: /v3/api-docs
+    autoDeployTrigger: commit
+    disk:
+      name: backend-data
+      mountPath: /render-data
+      sizeGB: 1
+    envVars:
+      - key: DB_HOST
+        fromService:
+          name: grading-system-mysql
+          type: pserv
+          property: host
+      - key: DB_PORT
+        fromService:
+          name: grading-system-mysql
+          type: pserv
+          property: port
+      - key: DB_NAME
+        value: grading_system
+      - key: DB_USER
+        fromService:
+          name: grading-system-mysql
+          type: pserv
+          envVarKey: MYSQL_USER
+      - key: DB_PASSWORD
+        fromService:
+          name: grading-system-mysql
+          type: pserv
+          envVarKey: MYSQL_PASSWORD
+      - key: SPRING_JPA_SHOW_SQL
+        value: "false"

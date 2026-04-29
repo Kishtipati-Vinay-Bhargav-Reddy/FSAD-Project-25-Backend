@@ -1,0 +1,11 @@
+target
+.git
+.github
+.idea
+.vscode
+backend.log
+backend-error.log
+uploads
+assignment-files
+*.iml
+*.class
