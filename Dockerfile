@@ -6,6 +6,6 @@ COPY . .
 
 RUN chmod +x mvnw && ./mvnw clean package -DskipTests
 
-EXPOSE 10000
+EXPOSE 8080
 
-CMD ["sh", "-c", "java -Dserver.port=10000 -jar target/*.jar"]
+CMD ["sh", "-c", "java -jar target/*.jar"]
