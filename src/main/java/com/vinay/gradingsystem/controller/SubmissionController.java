@@ -151,7 +151,10 @@ public class SubmissionController {
                 }
 
                 Path path = service.getStoredFilePath(submission.getFileName());
-                String zipEntryName = submission.getStudentName().replaceAll("[^a-zA-Z0-9._-]", "_")
+                String safeStudentName = (submission.getStudentName() == null || submission.getStudentName().isBlank())
+                        ? "student"
+                        : submission.getStudentName().replaceAll("[^a-zA-Z0-9._-]", "_");
+                String zipEntryName = safeStudentName
                         + "_"
                         + path.getFileName();
 
@@ -161,7 +164,9 @@ public class SubmissionController {
             }
         }
 
-        String safeTitle = assignment.getTitle().replaceAll("[^a-zA-Z0-9._-]", "_");
+        String safeTitle = (assignment.getTitle() == null || assignment.getTitle().isBlank())
+                ? "assignment"
+                : assignment.getTitle().replaceAll("[^a-zA-Z0-9._-]", "_");
 
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + safeTitle + "-submissions.zip\"")

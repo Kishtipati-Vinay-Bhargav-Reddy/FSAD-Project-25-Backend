@@ -78,7 +78,7 @@ public class StudentService {
         Student user = repo.findByEmailIgnoreCase(normalizedEmail)
                 .orElseThrow(() -> new RuntimeException("User not found"));
 
-        if (!user.getPassword().equals(password)) {
+        if (user.getPassword() == null || !user.getPassword().equals(password)) {
             throw new RuntimeException("Invalid password");
         }
 
