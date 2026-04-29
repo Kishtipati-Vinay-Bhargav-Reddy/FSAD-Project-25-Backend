@@ -64,4 +64,8 @@ GRANT ALL PRIVILEGES ON \`$DB_NAME_ESCAPED\`.* TO '$DB_USER_ESCAPED'@'127.0.0.1'
 FLUSH PRIVILEGES;
 SQL
 
+export SPRING_DATASOURCE_URL="jdbc:mysql://$DB_HOST:$DB_PORT/$DB_NAME?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+export SPRING_DATASOURCE_USERNAME="$DB_USER"
+export SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD"
+
 exec java -jar /app/app.jar
