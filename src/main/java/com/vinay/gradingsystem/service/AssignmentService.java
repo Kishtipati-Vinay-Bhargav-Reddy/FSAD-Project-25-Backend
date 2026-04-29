@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -166,18 +167,28 @@ public class AssignmentService {
     }
 
     private void dropLegacyCourseForeignKeys() {
-        List<String> legacyConstraintNames = jdbcTemplate.queryForList("""
-                        select constraint_name
-                        from information_schema.key_column_usage
-                        where table_schema = database()
-                          and table_name = 'assignment'
-                          and column_name = 'course_id'
-                          and referenced_table_name = 'course'
-                        """,
-                String.class
-        );
+        String databaseProductName = getDatabaseProductName();
+        if (databaseProductName == null || !databaseProductName.toLowerCase(Locale.ROOT).contains("mysql")) {
+            log.info("Skipping legacy assignment foreign key repair for database {}", databaseProductName);
+            return;
+        }
 
-        legacyConstraintNames.forEach(this::dropForeignKeyIfSafe);
+        try {
+            List<String> legacyConstraintNames = jdbcTemplate.queryForList("""
+                            select constraint_name
+                            from information_schema.key_column_usage
+                            where table_schema = database()
+                              and table_name = 'assignment'
+                              and column_name = 'course_id'
+                              and referenced_table_name = 'course'
+                            """,
+                    String.class
+            );
+
+            legacyConstraintNames.forEach(this::dropForeignKeyIfSafe);
+        } catch (Exception exception) {
+            log.warn("Skipping legacy assignment foreign key repair: {}", exception.getMessage());
+        }
     }
 
     private void connectExistingAssignmentsToCourses() {
@@ -214,6 +225,17 @@ public class AssignmentService {
 
         jdbcTemplate.execute("alter table assignment drop foreign key `" + constraintName + "`");
         log.info("Dropped legacy assignment foreign key {}", constraintName);
+    }
+
+    private String getDatabaseProductName() {
+        try {
+            return jdbcTemplate.execute((ConnectionCallback<String>) connection ->
+                    connection.getMetaData().getDatabaseProductName()
+            );
+        } catch (Exception exception) {
+            log.warn("Unable to detect database product: {}", exception.getMessage());
+            return null;
+        }
     }
 
     private void validateDeadlineFormat(String dueDate) {
