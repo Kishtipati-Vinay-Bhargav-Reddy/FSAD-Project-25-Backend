@@ -1,4 +1,4 @@
-FROM openjdk:17-jdk-slim
+FROM eclipse-temurin:17-jdk
 
 WORKDIR /app
 
@@ -8,4 +8,4 @@ RUN chmod +x mvnw && ./mvnw clean package
 
 EXPOSE 10000
 
-CMD ["java", "-Dserver.port=10000", "-jar", "target/*.jar"]
+CMD ["sh", "-c", "java -Dserver.port=10000 -jar target/*.jar"]
